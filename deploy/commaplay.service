@@ -1,0 +1,29 @@
+# Copyright (c) 2026 机械小鸽; SPDX-License-Identifier: GPL-3.0-only
+[Unit]
+Description=CommaPlay independent browser receiver
+After=network-online.target commaplay-bluetooth-web.service
+Wants=network-online.target commaplay-bluetooth-web.service
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=comma
+Group=comma
+WorkingDirectory=/data/commaplay
+ExecStart=/data/commaplay/deploy/run.sh
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=10
+KillMode=control-group
+Nice=10
+CPUQuota=50%
+MemoryMax=384M
+TasksMax=96
+UMask=0077
+NoNewPrivileges=true
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,22 @@
+# Copyright (c) 2026 机械小鸽; SPDX-License-Identifier: GPL-3.0-only
+[Unit]
+Description=CommaPlay Tesla hotspot address monitor
+After=NetworkManager.service
+RequiresMountsFor=/data
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/data/commaplay
+ExecStart=/usr/bin/python3 /data/commaplay/native/hotspot_nat.py
+RuntimeDirectory=commaplay-hotspot
+RuntimeDirectoryMode=0755
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/run/commaplay-hotspot /run/xtables.lock
+UMask=0022

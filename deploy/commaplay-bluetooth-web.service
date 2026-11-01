@@ -1,0 +1,25 @@
+# Copyright (c) 2026 机械小鸽; SPDX-License-Identifier: GPL-3.0-only
+[Unit]
+Description=CommaPlay private browser Bluetooth broker
+PartOf=commaplay.service
+After=dbus.service
+RequiresMountsFor=/data
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=comma
+Group=comma
+WorkingDirectory=/data/commaplay
+Environment=PYTHONPATH=/data/commaplay/deps
+ExecStart=/usr/bin/python3 /data/commaplay/native/bluetooth_web.py
+RuntimeDirectory=commaplay-bluetooth
+RuntimeDirectoryMode=0700
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+Nice=10
+CPUQuota=20%
+MemoryMax=96M
+UMask=0077

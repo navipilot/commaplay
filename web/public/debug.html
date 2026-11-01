@@ -1,0 +1,316 @@
+<!doctype html>
+<!-- Copyright (c) 2026 机械小鸽; SPDX-License-Identifier: GPL-3.0-only -->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CommaPlay Debug · 机械小鸽</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#111;color:#eee}body{max-width:980px;margin:auto;padding:24px}a{color:#d4f68a}h1{margin-bottom:8px}section{background:#1d1d1d;border:1px solid #444;border-radius:12px;padding:18px;margin:18px 0}button,input{font:inherit;padding:10px;border-radius:8px}button{cursor:pointer;background:#d4f68a;color:#111;border:0;margin:5px}button:disabled{opacity:.4;cursor:default}button.secondary{background:#444;color:#fff}.warning{color:#ffcc70}.error{color:#ff9797;white-space:pre-wrap}#devices{list-style:none;padding:0}.device{border-top:1px solid #444;padding:14px 0}.device strong{display:block;font-size:19px;overflow-wrap:anywhere}.metadata{color:#aaa;overflow-wrap:anywhere}.code{font-size:36px;letter-spacing:5px;font-weight:bold}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px}#prompt{border:2px solid #d4f68a}label{display:block;padding:10px 0}input[type=checkbox]{width:20px;height:20px}header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px}.actions{display:flex;flex-wrap:wrap}#auth-note{display:none}
+</style>
+<style>
+*{box-sizing:border-box} :root{font-family:system-ui,-apple-system,sans-serif;background:#0c100e;color:#e8eee9}
+body{max-width:1060px;padding:32px 24px 56px;background:radial-gradient(ellipse at top right,#22342566,transparent 55%)}
+header{padding:12px 0 24px;border-bottom:1px solid #ffffff12}h1{font-size:32px;letter-spacing:-1px;margin:0 0 8px}header div div{font-size:13px;color:#8c9f91}
+nav{display:flex;flex-wrap:wrap;gap:10px}nav a{padding:11px 16px;border:1px solid #ffffff1a;border-radius:12px;text-decoration:none;font-size:14px;background:#18211b}
+nav a:first-child{background:#d4f68a;color:#172511;border:0;font-weight:650}
+section{background:#151d18;border:1px solid #2c3930;border-radius:20px;padding:24px;margin:20px 0;box-shadow:0 12px 32px #0002}
+h2{font-size:20px;margin:0 0 14px;letter-spacing:-.3px}p{font-size:14px;line-height:1.8;color:#a7b6ac}
+button{min-height:44px;margin:0;border-radius:12px;padding:11px 16px;font-size:14px;font-weight:550;transition:background .15s}button:hover:not(:disabled){background:#e2ffa8}button.secondary{background:#27332b;color:#d9e5dc;border:1px solid #3b4b40}button.secondary:hover:not(:disabled){background:#35483b}
+.actions{gap:10px;margin:18px 0}.warning{color:#c8b893}#connection-reason{padding:16px 20px;background:#253421;border:1px solid #526d37;border-radius:14px;color:#d4e8bd}
+#status{padding:12px 16px;background:#0d1510;border-radius:12px;color:#d4f68a;margin:14px 0}
+#devices{margin:0}.device{padding:20px 0}.device strong{font-size:18px}.device .metadata{font-size:12px;margin:7px 0 14px;color:#82988a}.device button{margin-right:8px}
+fieldset{border:0;padding:0;margin:0;min-width:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+label{font-size:13px;color:#b1c4b7;padding:0;display:flex;flex-direction:column;gap:8px}
+input,select{font:inherit;color:#e8eee9;background:#0e1611;border:1px solid #364a3d;border-radius:10px;padding:12px;min-width:0;width:100%}
+select{min-height:44px}input[type=range]{accent-color:#d4f68a;padding:0}input[type=checkbox]{width:22px;height:22px;accent-color:#d4f68a}
+#display-apply,#match-window,#display-fields label:first-child,#display-fields label:has(#display-codec){grid-column:1/-1}
+#master-value{font-size:24px;color:#d4f68a}pre{background:#0b130e;border:1px solid #28392d;border-radius:12px;padding:18px;font-size:12px;color:#94aa9b}
+#prompt{border-color:#a8ce72;background:#202e1c}#prompt label{flex-direction:row;align-items:center;margin:16px 0}#prompt button{margin:6px 8px 0 0}
+.code{font-family:ui-monospace,monospace;color:#d4f68a;padding:12px 0}.error:empty{display:none}.error{color:#ffb4a5}
+:focus-visible{outline:2px solid #d4f68a;outline-offset:3px}button:disabled{opacity:.4;cursor:not-allowed}
+@media(max-width:600px){body{padding:18px 14px 32px}h1{font-size:27px}section{padding:18px;border-radius:16px}fieldset{grid-template-columns:1fr}nav{width:100%}nav a{flex:1;text-align:center}.actions button{flex:1 1 100%}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<header><div><h1>CommaPlay 设置</h1><div>机械小鸽 · 连接、画面与声音 · Debug</div></div><nav><a href="./">进入 CarPlay 全屏画面</a><a href="./probe.html">浏览器能力检测</a></nav></header>
+<p id="connection-reason" class="warning" role="status"></p>
+<p class="warning">请驻车并关闭巡航后修改设置。蓝牙配对与 CarPlay 连接是两个阶段；本页不会占用画面控制连接。</p>
+<p id="auth-note" class="error">缺少访问凭据。请先打开原来的私有主页面链接，再进入 Debug；不要公开分享链接。</p>
+<section>
+  <h2>蓝牙设备</h2><p id="status">读取准备情况…</p>
+  <p>首次连接：解锁 iPhone，打开「设置 → 蓝牙」，点击扫描并选择自己的手机。已配对的手机无需重复配对。</p>
+  <div class="actions"><button id="radio" type="button">初始化蓝牙（仅本次开机）</button><button id="scan" type="button">扫描设备 · 30 秒</button><button id="cancel" class="secondary" type="button">取消本页扫描 / 配对</button></div>
+  <div id="error" class="error" role="alert"></div><ul id="devices"></ul>
+</section>
+<section id="prompt" hidden aria-live="polite"><h2>配对确认</h2><div id="prompt-content"></div></section>
+<section id="display-settings">
+  <h2>画面设置</h2>
+  <p>画面随浏览器窗口等比例适配，不拉伸、不裁切。修改下方参数会重新建立 CarPlay 会话；普通窗口缩放不会断开连接。</p>
+  <form id="display-form">
+    <fieldset id="display-fields" disabled>
+      <label>分辨率预设 <select id="display-preset"><option value="">自定义</option></select></label>
+      <label>宽度 <input id="display-width" type="number" min="480" max="3840" step="2" required></label>
+      <label>高度 <input id="display-height" type="number" min="480" max="3840" step="2" required></label>
+      <button id="match-window" class="secondary" type="button">匹配当前浏览器窗口</button>
+      <label>帧率 <select id="display-fps"><option value="30">30 fps · 省资源</option><option value="60">60 fps</option></select></label>
+      <label>CarPlay 界面大小 <select id="display-scale"><option value="75">75%</option><option value="85">85%</option><option value="100">100%</option><option value="115">115%</option></select></label>
+      <label>编码 <select id="display-codec"><option value="h264">H.264 · 推荐，兼容 HTTP / Tesla</option><option value="h265">H.265 · 需浏览器 WebCodecs 支持</option></select></label>
+      <button id="display-apply" type="submit">应用画面设置（重启 CarPlay 会话）</button>
+    </fieldset>
+  </form>
+  <p id="display-status" role="status">读取显示参数…</p>
+</section>
+<section>
+  <h2>浏览器音量</h2>
+  <label>主音量 <input id="master-volume" type="range" min="0" max="100" value="100"> <output id="master-value">100%</output></label>
+  <p>画面连接后会自动尝试将声音交给浏览器播放。若浏览器限制有声自动播放，点按画面或「启用声音」即可授权；音量仅保存在当前浏览器。Siri 与电话麦克风仍受 HTTP 限制。</p>
+</section>
+<section><h2>特斯拉热点连接</h2><p id="hotspot-status" role="status">正在检查热点…</p><p id="hotspot-address"></p><p><a id="tesla-link" href="http://99.99.99.99:8080/" hidden>打开特斯拉入口：99.99.99.99:8080</a></p><p>驻车后在 comma3 网络设置中开启热点，将特斯拉车机连接到该热点，然后在车机浏览器输入 <strong>http://99.99.99.99:8080</strong>。热点状态与地址映射自动更新，无需手动添加规则。</p><p>该入口仅对连接 comma3 热点的客户端有效。iPhone 的 CarPlay 网络配置也需与热点一致；热点开启不代表有互联网，切换热点可能断开当前 Wi-Fi、SSH 和 CarPlay。</p></section>
+<section><h2>连接诊断</h2><button id="refresh" class="secondary" type="button">刷新诊断</button><p id="audio-ingress" role="status">检查手机音频接收情况…</p><p>遇到画面或声音问题时查看以下状态。认证材料只保存在设备本地，本页不提供密钥上传。</p><details><summary>查看接收器与浏览器详细状态</summary><pre id="diagnostics">读取中…</pre></details></section>
+<script type="module">
+const $ = id => document.getElementById(id);
+const url = new URL(location.href);
+const reasons = {
+  'access-required':'缺少访问凭据：请打开之前的私有链接，连接凭据只保存到当前浏览器。',
+  'receiver-unavailable':'接收器未连接 iPhone 或暂不可用，已转到 Debug。请检查蓝牙及下方诊断。',
+  'iphone-disconnected':'iPhone 会话已断开，已转到 Debug。配对成功不等于 CarPlay 已连接。',
+  'connection-lost':'浏览器连接中断，重试仍失败。请检查网络，并关闭其他占用控制位的主页面。',
+  'connection-unavailable':'无法建立浏览器控制连接。请关闭其他主页面；只允许一个控制浏览器。',
+  'video-unavailable':'已建立会话，但 20 秒内未显示首帧。请检查编码兼容性与接收器诊断。'
+};
+$('connection-reason').textContent = reasons[url.searchParams.get('reason')] || '设置完成后，点击上方「进入 CarPlay 全屏画面」。';
+let token = url.searchParams.get('token') || localStorage.getItem('playport-token') || '';
+let accessAvailable = !!token;
+if (url.searchParams.has('token')) {
+  if (token) localStorage.setItem('playport-token', token);
+  url.searchParams.delete('token'); history.replaceState(null, '', url);
+}
+let client = sessionStorage.getItem('commaplay-debug-client');
+if (!/^[0-9a-f]{32}$/.test(client || '')) {
+  client = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
+  sessionStorage.setItem('commaplay-debug-client', client);
+}
+let state = null, busy = false, timer = 0, signature = '', promptId = null, promptConfirm = null, promptValid = () => false;
+const element = (tag, text, className) => {
+  const node = document.createElement(tag);
+  if (text != null) node.textContent = text;
+  if (className) node.className = className;
+  return node;
+};
+async function api(operation, data = {}) {
+  const response = await fetch(operation ? '/api/bluetooth/' + operation : '/api/bluetooth?client=' + client, {
+    method: operation ? 'POST' : 'GET',
+    headers: {'Authorization': 'Bearer ' + token, ...(operation ? {'Content-Type':'application/json'} : {})},
+    ...(operation ? {body:JSON.stringify({client, ...data})} : {cache:'no-store'})
+  });
+  const result = await response.json();
+  if (!response.ok || result.ok === false) throw new Error(result.error || '蓝牙请求失败');
+  return result.data;
+}
+function controls() {
+  const blocked = !accessAvailable || busy || !state?.safety?.allowed || state?.busy;
+  $('radio').disabled = blocked || state?.pair?.state === 'pairing' || state?.radioState === 'starting';
+  $('scan').disabled = blocked || state?.pair?.state === 'pairing' || state?.radioState === 'starting';
+  $('cancel').disabled = !accessAvailable || busy || !state?.owned;
+  for (const button of document.querySelectorAll('[data-device-action]')) button.disabled = blocked || state?.pair?.state === 'pairing';
+  if (promptConfirm) promptConfirm.disabled = blocked || !state?.owned || !promptValid();
+  $('display-fields').disabled = !displayLoaded || blocked || displayApplying;
+}
+async function run(operation, data) {
+  if (busy) return;
+  busy = true; $('error').textContent = ''; controls();
+  try { await api(operation, data); await refresh(); }
+  catch (error) { $('error').textContent = error.message; }
+  finally { busy = false; controls(); }
+}
+function deviceButton(label, operation, address) {
+  const button = element('button', label); button.type = 'button'; button.dataset.deviceAction = operation;
+  button.onclick = () => run(operation, {address});
+  return button;
+}
+function devices() {
+  const list = state.devices || [];
+  const next = JSON.stringify({devices:list.map(({address,name,paired,connected,trusted})=>({address,name,paired,connected,trusted})), selected:state.selectedPhone});
+  if (next === signature) return;
+  signature = next; $('devices').replaceChildren();
+  if (!list.length) $('devices').append(element('li', '暂无设备。打开 iPhone 蓝牙设置后重新扫描。'));
+  for (const device of list) {
+    const item = element('li', null, 'device');
+    item.append(element('strong', device.name || '未命名设备'),
+      element('div', device.address + (device.paired ? ' · 已配对' : ' · 未配对') + (device.connected ? ' · 蓝牙已连接（非 CarPlay 状态）' : '') + (state.selectedPhone === device.address ? ' · 当前接收目标' : ''), 'metadata'));
+    if (!device.paired) item.append(deviceButton('配对这台设备', 'pair', device.address));
+    else if (state.selectedPhone !== device.address) item.append(deviceButton('设为 CarPlay iPhone（下次启动生效）', 'select', device.address));
+    $('devices').append(item);
+  }
+}
+function prompt() {
+  const request = state.prompt;
+  if ((request?.id || null) === promptId) return;
+  promptId = request?.id || null; promptConfirm = null; promptValid = () => false;
+  $('prompt').hidden = !request; $('prompt-content').replaceChildren();
+  if (!request) return;
+  const box = $('prompt-content');
+  box.append(element('p', '仅确认自己选择的手机：' + request.address));
+  if (request.value) box.append(element('div', request.value, 'code'));
+  const displayOnly = request.kind.startsWith('Display');
+  let input, check;
+  if (request.kind === 'RequestPinCode' || request.kind === 'RequestPasskey') {
+    box.append(element('p', '输入手机显示的 PIN / 配对码。'));
+    input = element('input'); input.autocomplete = 'off'; input.maxLength = request.kind === 'RequestPasskey' ? 6 : 16;
+    input.setAttribute('aria-label', '手机配对码'); input.oninput = controls; box.append(input);
+    promptValid = () => request.kind === 'RequestPasskey' ? /^[0-9]{1,6}$/.test(input.value) : input.value.length >= 1 && input.value.length <= 16;
+  } else if (!displayOnly) {
+    const label = element('label'); check = element('input'); check.type = 'checkbox'; check.onchange = controls;
+    label.append(check, document.createTextNode(request.kind === 'RequestConfirmation' ? ' 我已核对手机上的配对码与此页完全一致' : ' 我允许这台选中设备的本次配对请求'));
+    box.append(label); promptValid = () => check.checked;
+  } else box.append(element('p', '请按手机提示确认或输入上面的号码；本页不会自动接受配对。'));
+  if (!displayOnly) {
+    promptConfirm = element('button', '确认'); promptConfirm.type = 'button';
+    promptConfirm.onclick = () => run('answer', {promptId:request.id, value:input ? input.value : true});
+    box.append(promptConfirm);
+  }
+  const reject = element('button', '拒绝 / 取消', 'secondary'); reject.type = 'button'; reject.onclick = () => run('cancel'); box.append(reject);
+}
+async function refresh() {
+  void refreshHotspot();
+  try {
+    state = await api();
+    $('status').textContent = !state.safety?.allowed ? '操作已锁定：需要新鲜的驻车、巡航关闭状态。' :
+      state.busy ? '另一 Debug 页面正在设置，请关闭它或等待超时。' :
+      state.radioState === 'starting' ? '正在初始化蓝牙…' :
+      state.pair?.state === 'pairing' ? '正在与选中的手机配对，请查看下方确认提示。' :
+      state.pair?.state === 'paired' ? '蓝牙配对成功。接收器仍需 MFi 身份，才能测试真实 CarPlay。' :
+      state.scanning ? '正在扫描设备…' :
+      state.adapters?.some(adapter => adapter.powered) ? '蓝牙已就绪。请扫描并选择自己的 iPhone。' : '蓝牙未就绪，请初始化。';
+    if (state.pair?.error) $('error').textContent = state.pair.error;
+    if (state.radioState === 'error') $('error').textContent = '蓝牙初始化失败，请检查设备服务日志。';
+    devices(); prompt();
+  } catch (error) {
+    state = null; $('status').textContent = '蓝牙网页服务暂不可用'; $('error').textContent = error.message;
+  }
+  async function refreshHotspot() {
+    try {
+      const response = await fetch('/api/hotspot', {cache:'no-store'});
+      if (!response.ok) throw new Error('unavailable');
+      const report = await response.json();
+      $('tesla-link').hidden = !report.enabled || !!report.error;
+      $('hotspot-status').textContent = report.error ?
+        '热点监测暂不可用，地址映射未确认。请检查 commaplay-hotspot 服务。' :
+        report.enabled ? '热点已开启，特斯拉入口映射已就绪。' :
+        '热点未开启。请先在 comma3 网络设置中开启热点，连接后再使用特斯拉入口。';
+      $('hotspot-address').textContent = (report.hotspots || []).map(item =>
+        '热点网关：' + item.address + ' · 接口：' + item.interface).join('；');
+    } catch {
+      $('tesla-link').hidden = true;
+      $('hotspot-status').textContent = '无法读取热点状态，请检查设备连接或监测服务。';
+      $('hotspot-address').textContent = '';
+    }
+  }
+  controls();
+}
+async function diagnostics() {
+  const result = {origin:location.origin, secureContext:isSecureContext,
+    h264Mse:typeof MediaSource !== 'undefined' && MediaSource.isTypeSupported('video/mp4; codecs="avc1.42E01E"'),
+    aacMse:typeof MediaSource !== 'undefined' && MediaSource.isTypeSupported('audio/mp4; codecs="mp4a.40.2"'),
+    webAudio:typeof AudioContext !== 'undefined', audioDecoder:typeof AudioDecoder !== 'undefined',
+    webCodecs:typeof VideoDecoder !== 'undefined', microphone:!!navigator.mediaDevices?.getUserMedia};
+  try {
+    result.receiver = await (await fetch('/api/status')).json();
+    const audio = result.receiver.audio;
+    $('audio-ingress').textContent = !audio || !audio.packetsReceived ?
+      '尚未收到 iPhone 音频。请先播放音乐；若仍从手机发声，请在 iPhone 控制中心的播放输出中查看是否可选择 CommaPlay / CarPlay。浏览器自动播放授权不会改变手机输出目的地。' :
+      audio.lastPacketAgeMs < 3000 ? '正在接收 iPhone 音频。若浏览器无声，请检查声音授权、音量和编码支持。' :
+      '已接收过 iPhone 音频，当前没有新包；可能已暂停播放或手机切换了输出。';
+    const response = await fetch('/api/readiness', {headers:{Authorization:'Bearer ' + token}});
+    result.iphoneReadiness = await response.json();
+  } catch (error) {result.error = error.message;}
+  $('diagnostics').textContent = JSON.stringify(result, null, 2);
+}
+let displayLoaded = false, displayApplying = false;
+async function loadDisplay() {
+  try {
+    const response = await fetch('/api/display', {cache:'no-store'});
+    if (!response.ok) throw new Error('读取显示参数失败');
+    const info = await response.json();
+    $('display-width').value = info.width; $('display-height').value = info.height;
+    $('display-fps').value = info.fps; $('display-scale').value = info.uiScale;
+    $('display-codec').value = info.hevc ? 'h265' : 'h264';
+    for (const preset of info.presets) {
+      const option = element('option', preset.width + ' × ' + preset.height);
+      option.value = preset.width + 'x' + preset.height; $('display-preset').append(option);
+    }
+    let hevc = false;
+    if (typeof VideoDecoder !== 'undefined') {
+      for (const codec of ['hvc1.1.6.L120.B0','hvc1.1.6.L93.B0','hvc1.2.4.L120.B0']) {
+        try { if ((await VideoDecoder.isConfigSupported({codec})).supported) {hevc = true; break;} } catch {}
+      }
+    }
+    $('display-codec').querySelector('[value=h265]').disabled = !hevc;
+    if (!hevc) $('display-codec').value = 'h264';
+    displayLoaded = true;
+    $('display-status').textContent = `当前接收分辨率：${info.width} × ${info.height} · ${info.fps} fps。修改仅限驻车；不自动更改 Wi-Fi。`;
+  } catch (error) { $('display-status').textContent = error.message; }
+  controls();
+}
+$('display-preset').onchange = () => {
+  const [width,height] = $('display-preset').value.split('x');
+  if (width && height) {$('display-width').value = width; $('display-height').value = height;}
+};
+$('match-window').onclick = () => {
+  const ratio = devicePixelRatio || 1;
+  const even = value => Math.max(480, Math.min(3840, Math.round(value * ratio / 2) * 2));
+  $('display-width').value = even(innerWidth); $('display-height').value = even(innerHeight);
+  $('display-preset').value = '';
+  $('display-status').textContent = '已填入当前窗口的物理像素。尚未应用，不会因窗口缩放自动重连。';
+};
+$('display-form').onsubmit = async event => {
+  event.preventDefault();
+  if (!accessAvailable || !state?.safety?.allowed || state.busy || !displayLoaded || displayApplying) return;
+  displayApplying = true; controls();
+  try {
+    const response = await fetch('/api/display?token=' + encodeURIComponent(token), {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({width:Number($('display-width').value), height:Number($('display-height').value),
+        fps:Number($('display-fps').value), uiScale:Number($('display-scale').value), hevc:$('display-codec').value === 'h265'})
+    });
+    const result = await response.json();
+    if (!response.ok || !result.ok) throw new Error(result.error || '应用失败');
+    $('display-status').textContent = '已应用。CarPlay 会话正在重启，请稍候再进入主页面。';
+  } catch (error) { $('display-status').textContent = error.message; }
+  finally {displayApplying = false; controls();}
+};
+const storedMaster = Number(localStorage.getItem('playport-master') ?? '100');
+$('master-volume').value = Number.isFinite(storedMaster) ? Math.max(0, Math.min(100, storedMaster)) : 100;
+$('master-value').textContent = $('master-volume').value + '%';
+$('master-volume').oninput = () => {
+  localStorage.setItem('playport-master', $('master-volume').value);
+  $('master-value').textContent = $('master-volume').value + '%';
+};
+function cancelOnExit() {
+  if (!accessAvailable || !state?.owned) return;
+  void fetch('/api/bluetooth/cancel', {method:'POST', keepalive:true,
+    headers:{Authorization:'Bearer ' + token, 'Content-Type':'application/json'}, body:JSON.stringify({client})}).catch(()=>{});
+}
+function startPolling() {
+  clearTimeout(timer);
+  if (!accessAvailable || document.hidden) return;
+  void refresh().finally(()=>{if (!document.hidden) timer = setTimeout(startPolling, 1000);});
+}
+$('radio').onclick = () => run('radio'); $('scan').onclick = () => run('scan'); $('cancel').onclick = () => run('cancel');
+$('refresh').onclick = diagnostics;
+window.addEventListener('pagehide', cancelOnExit);
+document.addEventListener('visibilitychange', () => {if (document.hidden) clearTimeout(timer); else startPolling();});
+async function initialize() {
+  try {
+    const response = await fetch('/api/status', {cache:'no-store',signal:AbortSignal.timeout(3000)});
+    if (response.ok && (await response.json()).browserAuth === false) accessAvailable = true;
+  } catch {}
+  $('auth-note').style.display = accessAvailable ? 'none' : 'block'; controls();
+  if (accessAvailable) {startPolling(); void diagnostics(); void loadDisplay();}
+  else $('diagnostics').textContent = '接收器不可用或需要访问凭据。';
+}
+controls(); void initialize();
+</script>
+</body>
+</html>

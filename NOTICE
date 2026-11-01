@@ -1,0 +1,53 @@
+CommaPlay original additions
+Copyright (c) 2026 机械小鸽
+Released under GNU GPL version 3.
+
+This is a derivative, experimental project, not a clean-room CarPlay implementation.
+Upstream copyright and license notices are preserved, not replaced by our attribution.
+
+PlayPort: https://github.com/youcci/playport
+Base commit: 9a0882dd0ffe48e467b59d58b12d81391df55ade
+License: GPLv3. Includes protocol code ported from DiPlay by shihabal3amri,
+https://github.com/shihabal3amri/DiPlay, and xcertplay by shilapi,
+https://github.com/shilapi/xcertplay. See original file notices and README.upstream.md.
+
+LinuxPlay: https://github.com/Roylyl/LinuxPlay
+ZIP commit: 370c844a7675165cb4f682bb799992d1550afd74
+native/linux-platform.py and tests/linux-platform.test.py were adapted from this
+GPLv3 project. Only the Linux bridge and its tests were imported; no MFi identity
+or upstream credentials were copied.
+
+map2tesla: https://github.com/jixiexiaoge/map2tesla
+The fragmented MP4 layout in web/src/mse.ts was adapted from the GPLv3
+usb_carplay_player.html implementation. This does not copy the Android VPN
+virtual-IP mechanism, which is not portable to this Linux device.
+
+Carrot's BlueZ browser pairing implementation:
+Reference source: /openpilot/selfdrive/carrot/bluetooth/bluez.py
+native/bluez_client.py adapts the application-scoped agent and device operations.
+Copyright (c) 2018, Comma.ai, Inc.; MIT notice retained in licenses/carrot-MIT.txt.
+Carrot vehicle controls, HID mappings and radio boot flags are NOT imported.
+The web broker reads only the fresh stationary/disengaged setup-state snapshot.
+
+Runtime libraries retain their respective upstream licenses inside JARs.
+DashPlay: https://github.com/yizhixiaoheigou/DashPlay (GPLv3).
+The queued swipe endpoint and capture-loss handling in web/src/input.ts were
+informed by patches/playport-touch-swipe.patch; original CommaPlay cleanup rules
+and browser input tests are retained. NIOPlay and wheelplay browser/audio designs
+were reviewed as references; their Android/Rust playback engines were not copied.
+NIOPlay: https://github.com/kissggj123/NIOPlay.
+native/Engine/protocol/getInfo.ts informed the complete bidirectional audio
+declaration enabled through existing CommaPlay microphone/format support.
+No NIOPlay native decoder, Android/Rust playback engine or source file was copied.
+wheelplay: https://github.com/fython/wheelplay (GPLv3).
+The guarded disableBluetooth/Wi-Fi iAP2 handoff in WirelessBootstrap.kt was
+adapted from shared/.../orchestration/CarPlayController.kt. Only the owned RFCOMM
+bootstrap transport is closed, not the Linux Bluetooth controller or Wi-Fi.
+The optional separately downloaded OpenJDK runtime retains its complete
+legal directory (GPLv2 with Classpath Exception and third-party notices).
+Before distributing binaries, provide the complete corresponding source,
+build scripts, notices and any applicable runtime source obligations.
+
+CarPlay, iPhone and Tesla are third-party trademarks. This project is not
+affiliated with or endorsed by Apple, Tesla or comma.ai. Accessory credentials
+must be lawfully obtained and must not be distributed with this project.

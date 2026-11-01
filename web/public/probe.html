@@ -1,0 +1,29 @@
+<!doctype html>
+<!-- Copyright (c) 2026 机械小鸽; SPDX-License-Identifier: GPL-3.0-only -->
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>CommaPlay 浏览器检测 · 机械小鸽</title>
+<style>body{background:#111;color:#eee;font:18px sans-serif;padding:24px}pre{white-space:pre-wrap}a{color:#d4f68a}button{font-size:20px;padding:12px}</style>
+<h1>CommaPlay · 浏览器检测</h1>
+<p>仅在驻车状态测试。检测通过不代表 iPhone CarPlay 已连接。</p>
+<p>先打开私有测试链接再检测。iPhone 准备信息只检查蓝牙、配置和认证文件是否存在，不校验凭据合法性或真实性，不显示密码、密钥或配对设备名称。</p>
+<pre id="result"></pre><button id="refresh">重新检测</button> <a href="./">返回测试画面</a>
+<script>
+async function probe(){
+  const result={url:location.origin,userAgent:navigator.userAgent,secureContext:window.isSecureContext,
+    websocket:typeof WebSocket!=='undefined',mse:typeof MediaSource!=='undefined',
+    h264Mse:typeof MediaSource!=='undefined'&&MediaSource.isTypeSupported('video/mp4; codecs="avc1.42E01E"'),
+    webCodecs:typeof VideoDecoder!=='undefined',audioContext:typeof AudioContext!=='undefined',
+    microphone:!!navigator.mediaDevices?.getUserMedia};
+  try{result.server=await(await fetch('/api/status')).json();}catch(error){result.serverError=String(error);}
+  document.getElementById('result').textContent=JSON.stringify(result,null,2);
+  const token=localStorage.getItem('playport-token');
+  if(token || result.server?.browserAuth === false){
+    try{
+      const response=await fetch('/api/readiness' + (token ? '?token='+encodeURIComponent(token) : ''));
+      result.iphoneReadiness=await response.json();
+    }catch(error){result.iphoneReadinessError=String(error);}
+  }else{result.iphoneReadiness='先打开私有测试链接，再返回此页检查 iPhone 准备情况。';}
+  document.getElementById('result').textContent=JSON.stringify(result,null,2);
+}
+document.getElementById('refresh').onclick=probe;probe();
+</script></html>

@@ -1,0 +1,17 @@
+# Copyright (c) 2026 机械小鸽; SPDX-License-Identifier: GPL-3.0-only
+[Unit]
+Description=CommaPlay temporary Qualcomm Bluetooth radio
+After=local-fs.target dbus.service
+RequiresMountsFor=/data
+ConditionPathExists=/usr/comma/bluetooth-radio
+
+[Service]
+Type=simple
+ExecStartPre=/usr/comma/bluetooth-radio prepare
+ExecStart=/usr/bin/btattach -B /dev/ttyHS1 -P qca -S 115200
+ExecStartPost=/usr/comma/bluetooth-radio ready
+ExecStop=/usr/comma/bluetooth-radio stop
+ExecStopPost=/usr/comma/bluetooth-radio cleanup
+Restart=no
+TimeoutStartSec=60
+TimeoutStopSec=10
