@@ -81,14 +81,12 @@ try {
     await viewer.goto(base+'/');
     await viewer.waitForFunction(()=>document.querySelector('.mse-video')?.currentTime>.2,{timeout:15000});
     await viewer.waitForFunction(()=>document.querySelector('.mse-video')?.currentTime>1.2);
-    await viewer.evaluate(()=>{
-      const video=document.querySelector('.mse-video');
-      video.currentTime=Math.max(0,video.buffered.end(video.buffered.length-1)-.9);
-    });
-    await viewer.waitForFunction(()=>{
-      const video=document.querySelector('.mse-video');
-      return video.buffered.end(video.buffered.length-1)-video.currentTime<.45;
-    },{timeout:2000});
+    const playback = await viewer.locator('.mse-video').evaluate(video=>({
+      buffered: video.buffered.end(video.buffered.length-1)-video.buffered.start(0),
+      rate: video.playbackRate,
+    }));
+    assert.ok(playback.buffered < 5, 'MSE video buffer must remain bounded without seek flashes');
+    assert.equal(playback.rate, 1, 'MSE video playback must not time-warp the active decoder');
     assert.equal((await (await fetch(base+'/api/status')).json()).audio.packetsReceived,0,
       'A live video must not imply that phone audio has arrived');
     const page = await context.newPage();

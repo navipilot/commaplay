@@ -142,7 +142,6 @@ class CarPlayServer(val config: ServerConfig, private val configStore: ConfigSto
         hub.inputHandler = ::routeInput
         hub.onApplyDisplay = ::applyDisplay
         hub.onMicrophoneData = { opus, payload -> bridge.sendMicrophonePayload(payload, opus) }
-        startSupervisor()
         hub.onViewerJoined = { streamType ->
             if (bridge.hasRecoveryHandler) {
                 log.info("requesting keyframe for stream {}", streamType)
@@ -153,9 +152,11 @@ class CarPlayServer(val config: ServerConfig, private val configStore: ConfigSto
         startAirPlayListener()
         advertiser = Advertisers.create(config.mdns, airPlayConfig, identity, bindAddress).also { it.start() }
         if (config.wireless) {
+            lastBootstrapAt = System.currentTimeMillis()
             wireless = WirelessBootstrap(this).also { it.start() }
         }
         hub.receiverReady = true
+        startSupervisor()
     }
 
     private fun startAirPlayListener() {
@@ -294,7 +295,14 @@ class CarPlayServer(val config: ServerConfig, private val configStore: ConfigSto
                             lastBootstrapAt = System.currentTimeMillis()
                             continue
                         }
-                        if (wireless?.running == true) continue
+                        val bootstrap = wireless
+                        if (bootstrap?.running == true) {
+                            if (bootstrap.handoffTimedOut()) {
+                                log.warn("Wi-Fi handoff timed out; retrying Bluetooth bootstrap")
+                                restartWireless()
+                            }
+                            continue
+                        }
                         val now = System.currentTimeMillis()
                         if (now - lastBootstrapAt < BOOTSTRAP_COOLDOWN_MS) continue
                         log.info("no CarPlay session; re-inviting the iPhone over Bluetooth/Wi-Fi")

@@ -52,6 +52,12 @@ HTTP 下，H.264/AAC 使用 MSE/fMP4，Opus 使用 MSE/WebM，LPCM 使用 Web Au
 安全来源可使用 WebCodecs。comma 不解码、转码或从自己的扬声器播放这些媒体。
 Opus 需要浏览器支持 `audio/webm; codecs="opus"`，Tesla 的实际支持仍需验证。
 
+音频突发到达时合并追加，限制待写缓冲，不再因超过 64 个待写包永久关闭播放。
+HTTP 视频按完整 GOP 清理旧缓冲，避免移除仍在解码的帧；静止画面的最后一帧也会提交。
+普通静止或缓冲耗尽不会周期性重建播放器；只有实际 MSE 错误才限频尝试重建。
+这些措施不能解决浏览器不支持 HEVC、热点干扰或过高分辨率，
+优先使用上面的 H.264/720p 配置。
+
 「全屏」按钮调用浏览器 Fullscreen API，需要用户手势。
 自动适配窗口不等于能隐藏车机浏览器自身工具栏。
 
@@ -77,8 +83,10 @@ Debug 在热点关闭、监测故障时隐藏入口链接，不把未知状态�
 
 **地址映射不等于整个热点 CarPlay 链路已经配置好：**
 
-- iPhone 的无线引导 SSID、密码、IP 和 CarPlay 监听地址必须与热点一致。
-  当前没有自动完成热点切换后的接收器网络重配置。
+- 网络监测服务会自动识别活动 Wi-Fi；热点优先于并行的管理 Wi-Fi。
+  自动匹配 SSID、密码、实际频道、IP 和 CarPlay 监听地址。
+  连续两次检测稳定且有新鲜驻车/巡航关闭证据后，仅重启接收器重新引导手机。
+  切换时画面会暂时断开，手机可能再次要求确认；不自动开启热点或替客户端连接。
 - 同一个 `wlan0` 的热点可能替换现有 Wi-Fi，断开 SSH 和当前 CarPlay。
   Wi-Fi 客户端与 AP 同时运行的稳定性尚未验证，切换前需准备独立管理或回滚。
 - 热点不自动提供互联网。蜂窝上网需要正常 SIM 和数据连接；
@@ -133,7 +141,7 @@ mkdir -p /data/commaplay/state /data/commaplay/identity
 chmod 700 /data/commaplay/state /data/commaplay/identity
 printf 'diagnostics\n' > /data/commaplay/mode
 sudo /data/commaplay/deploy/start.sh
-sudo systemctl status commaplay.service commaplay-hotspot.service --no-pager
+sudo systemctl status commaplay.service commaplay-hotspot.service commaplay-network.service --no-pager
 curl -fsS http://127.0.0.1:8080/api/status
 ```
 
@@ -190,8 +198,8 @@ CommaPlay 服务恢复，以及 `/api/status` 可访问。不要用
 由开机入口重新建立。
 
 **已有安装升级：** 驻车时先备份 `/data/commaplay`（含私有配置，备份也要保护），
-核对新包内容后停止 `commaplay.service`、`commaplay-bluetooth-web.service`
-和 `commaplay-hotspot.service`。仅更新包内运行文件，保留 `mode`、
+核对新包内容后停止 `commaplay.service`、`commaplay-bluetooth-web.service`、
+`commaplay-hotspot.service` 和 `commaplay-network.service`。仅更新包内运行文件，保留 `mode`、
 `receiver.args`、`state/`、`identity/`；不要把备份放进发布包。
 再执行 `deploy/start.sh` 并按上述步骤验收。升级失败时恢复原运行文件，
 不要抹掉手机配对或身份来代替回滚；此项目尚未提供一键升级安装器。
@@ -275,8 +283,17 @@ Qualcomm 蓝牙需要固件、电源和 UART 初始化，单独启动 BlueZ 不�
 sudo /data/commaplay/deploy/start.sh
 ```
 
-该入口初始化蓝牙，注册并启动接收器、网页配对 broker 和热点监测器。
+该入口初始化蓝牙，注册并启动接收器、网页配对 broker、热点与网络监测器。
 系统分区保持只读：源文件在 `/data`，运行单元注册到 `/run/systemd/system`。
+
+启动时自动读取活动 Wi-Fi 配置；运行期间每轮检测后等待 2 秒。
+热点开启时，iPhone 和浏览器应接入 comma 热点；热点关闭时，两者应与 comma
+接入同一可互通 Wi-Fi。监测器不修改 NetworkManager、不覆盖 `receiver.args`
+或 `state/config.json`，仅生成优先级更高的私有运行参数
+`/run/commaplay-network/receiver.args`（root/comma，640）。
+需 root 读取 NetworkManager 密码及驻车状态；日志不输出密码。
+开放网络、WPA2-PSK、WPA3-SAE 可识别；企业认证或无法读取密码时保留上次配置，
+不会猜测凭据。初次启动检测失败则使用原配置，应查监测日志核对。
 
 初次安装开机入口或撤销入口：
 
@@ -295,12 +312,15 @@ sudo python3 /data/commaplay/deploy/install-autostart.py --remove
 sudo systemctl status commaplay.service commaplay-hotspot.service --no-pager
 sudo journalctl -u commaplay.service -n 40 --no-pager
 sudo journalctl -u commaplay-hotspot.service -n 30 --no-pager
+sudo journalctl -u commaplay-network.service -n 30 --no-pager
 cat /run/commaplay-hotspot/status.json
 
 # 停止接收器及关联的网页配对 broker；热点监测器独立运行
 sudo systemctl stop commaplay.service
 # 停止热点监测并撤销其地址映射
 sudo systemctl stop commaplay-hotspot.service
+# 停止网络监测；需要一起停止以便维护运行文件
+sudo systemctl stop commaplay-network.service
 ```
 
 ## 排查问题
@@ -312,7 +332,7 @@ sudo systemctl stop commaplay-hotspot.service
 | 音乐仍从 iPhone 发出 | Debug 查看音频包是否增长；无包时检查手机实际播放与输出选择 |
 | 收到音频但浏览器无声 | 点按页面触发授权，检查音量、浏览器编码能力和错误信息 |
 | Tesla 入口打不开 | 确认车机连接的是 comma 热点、映射已就绪，而不是外部路由器 Wi-Fi |
-| 改热点后手机断连 | 核对接收器绑定地址及 Wi-Fi 引导参数，映射不负责这些重配置 |
+| 改热点后手机断连 | 查看网络监测日志、驻车状态及 `ss -lnt` 的 17000 监听地址；等待重新引导 |
 | 设置操作被锁定 | 检查真实驻车/巡航状态及证据时效，不要关闭安全检查 |
 | 手机卡没有数据连接 | 先确认 SIM 已识别和运营商注册，再检查 APN；APN 不能修复 `SIM absent` |
 
@@ -350,6 +370,7 @@ python3 tests/linux-platform.test.py
 python3 tests/iphone-readiness.test.py
 python3 tests/autostart.test.py
 python3 tests/hotspot-nat.test.py
+python3 tests/network-sync.test.py
 python3 -m pip install --target .runtime/pydeps -r deploy/requirements.txt
 PYTHONPATH="$PWD/.runtime/pydeps" python3 tests/web-bluetooth.test.py
 

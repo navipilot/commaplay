@@ -28,6 +28,7 @@ export class VideoPlayer {
   private framesRendered = 0;
   private lastFrameSize = { width: 0, height: 0 };
   private mse: MsePlayer | null = null;
+  private lastMseErrorRecovery = -Infinity;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -49,6 +50,11 @@ export class VideoPlayer {
   lastArrivalAt = 0;
 
   configure(message: VideoConfigMessage): void {
+    const previous = this.lastConfig;
+    if (this.isConfigured && previous && previous.codec === message.codec &&
+        previous.width === message.width && previous.height === message.height &&
+        previous.codecData.length === message.codecData.length &&
+        previous.codecData.every((byte, index) => byte === message.codecData[index])) return;
     void this.configureAsync(message);
   }
 
@@ -79,7 +85,17 @@ export class VideoPlayer {
       this.onError('HTTP mode supports H.264 only. Select H.264 in Display settings.');
       return;
     }
-    const mse = new MsePlayer(this.canvas, this.onFrame, this.onError, this.onRequestKeyframe);
+    const mse = new MsePlayer(this.canvas, this.onFrame, message => {
+      if (!message) { this.onError(''); return; }
+      if (generation !== this.generation) return;
+      // Stalls only request a keyframe in MsePlayer. Rebuild only after an actual MSE error closed it.
+      if (performance.now() - this.lastMseErrorRecovery > 5_000) {
+        this.lastMseErrorRecovery = performance.now();
+        void this.configureAsync(this.lastConfig!);
+      } else {
+        this.onError(message);
+      }
+    }, this.onRequestKeyframe);
     this.mse = mse;
     try {
       await mse.configure(message);
@@ -195,7 +211,7 @@ export class VideoPlayer {
   }
 
   restart(): void {
-    if (this.lastConfig) this.configure(this.lastConfig);
+    if (this.lastConfig) void this.configureAsync(this.lastConfig);
   }
 
   /**

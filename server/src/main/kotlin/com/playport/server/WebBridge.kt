@@ -5,11 +5,16 @@ import com.shilapi.xcertplay.airplay.MediaSink
 import com.shilapi.xcertplay.airplay.MicrophoneConfig
 import com.shilapi.xcertplay.airplay.VideoCodec
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
+import org.slf4j.LoggerFactory
 
 /** Forwards decrypted CarPlay media to the browser hub without decoding it server-side. */
 class WebBridge(private val hub: WebHub) : MediaSink {
+    private val log = LoggerFactory.getLogger("video-recovery")
     private val recoveryHandlers = java.util.concurrent.ConcurrentHashMap<Int, () -> Unit>()
     private val diagnosticHandlers = java.util.concurrent.ConcurrentHashMap<Int, (String) -> Unit>()
+    private val lastVideoFrameAt = java.util.concurrent.ConcurrentHashMap<Int, AtomicLong>()
+    private val lastRecoveryAt = java.util.concurrent.ConcurrentHashMap<Int, AtomicLong>()
     private val firstFrameReported = AtomicBoolean(false)
 
     override fun onVideoCodec(type: Int, codec: VideoCodec) {
@@ -21,6 +26,23 @@ class WebBridge(private val hub: WebHub) : MediaSink {
     }
 
     override fun onVideoFrame(type: Int, naluBytes: ByteArray) {
+        val now = System.nanoTime()
+        val lastFrame = lastVideoFrameAt.computeIfAbsent(type) { AtomicLong(now) }
+        val recovery = lastRecoveryAt.computeIfAbsent(type) { AtomicLong(0) }
+        if (!containsPicture(naluBytes)) {
+            // iPhone emits empty/AUD-only screen-stream heartbeats when its encoder has stopped
+            // producing pictures. Do not send them to MSE; request a rate-limited recovery keyframe.
+            if (now - lastFrame.get() >= VIDEO_STALL_NS) {
+                val previous = recovery.get()
+                if (now - previous >= RECOVERY_INTERVAL_NS && recovery.compareAndSet(previous, now)) {
+                    val handler = recoveryHandlers[type]
+                    log.info("video picture stream stalled type={} recoveryHandler={}", type, handler != null)
+                    handler?.invoke()
+                }
+            }
+            return
+        }
+        lastFrame.set(now)
         val codec = hub.videoCodec(type) ?: VideoCodec.H264
         hub.broadcastVideoFrame(type, Wire.isKeyFrame(naluBytes, codec), naluBytes)
         if (firstFrameReported.compareAndSet(false, true)) {
@@ -102,5 +124,24 @@ class WebBridge(private val hub: WebHub) : MediaSink {
 
     private companion object {
         const val RTP_HEADER_BYTES = 12
+        const val VIDEO_STALL_NS = 2_000_000_000L
+        const val RECOVERY_INTERVAL_NS = 5_000_000_000L
+
+        /** H.264 VCL NAL units 1/5 contain a picture; AUD/SPS/PPS/empty heartbeat data do not. */
+        fun containsPicture(bytes: ByteArray): Boolean {
+            var index = 0
+            while (index + 4 < bytes.size) {
+                val start = when {
+                    bytes[index] == 0.toByte() && bytes[index + 1] == 0.toByte() &&
+                        bytes[index + 2] == 1.toByte() -> index + 3
+                    bytes[index] == 0.toByte() && bytes[index + 1] == 0.toByte() &&
+                        bytes[index + 2] == 0.toByte() && bytes[index + 3] == 1.toByte() -> index + 4
+                    else -> { index++; continue }
+                }
+                if (start < bytes.size && (bytes[start].toInt() and 0x1f) in setOf(1, 5)) return true
+                index = start
+            }
+            return false
+        }
     }
 }

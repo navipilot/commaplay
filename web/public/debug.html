@@ -53,7 +53,7 @@ select{min-height:44px}input[type=range]{accent-color:#d4f68a;padding:0}input[ty
       <label>宽度 <input id="display-width" type="number" min="480" max="3840" step="2" required></label>
       <label>高度 <input id="display-height" type="number" min="480" max="3840" step="2" required></label>
       <button id="match-window" class="secondary" type="button">匹配当前浏览器窗口</button>
-      <label>帧率 <select id="display-fps"><option value="30">30 fps · 省资源</option><option value="60">60 fps</option></select></label>
+      <label>帧率 <select id="display-fps"><option value="10">10 fps · 最稳，先排查闪烁</option><option value="15" selected>15 fps · 推荐起点</option><option value="20">20 fps · 平衡</option><option value="30">30 fps · 较高负载</option><option value="60">60 fps · 不建议热点测试</option></select></label>
       <label>CarPlay 界面大小 <select id="display-scale"><option value="75">75%</option><option value="85">85%</option><option value="100">100%</option><option value="115">115%</option></select></label>
       <label>编码 <select id="display-codec"><option value="h264">H.264 · 推荐，兼容 HTTP / Tesla</option><option value="h265">H.265 · 需浏览器 WebCodecs 支持</option></select></label>
       <button id="display-apply" type="submit">应用画面设置（重启 CarPlay 会话）</button>
@@ -67,7 +67,8 @@ select{min-height:44px}input[type=range]{accent-color:#d4f68a;padding:0}input[ty
   <p>画面连接后会自动尝试将声音交给浏览器播放。若浏览器限制有声自动播放，点按画面或「启用声音」即可授权；音量仅保存在当前浏览器。Siri 与电话麦克风仍受 HTTP 限制。</p>
 </section>
 <section><h2>特斯拉热点连接</h2><p id="hotspot-status" role="status">正在检查热点…</p><p id="hotspot-address"></p><p><a id="tesla-link" href="http://99.99.99.99:8080/" hidden>打开特斯拉入口：99.99.99.99:8080</a></p><p>驻车后在 comma3 网络设置中开启热点，将特斯拉车机连接到该热点，然后在车机浏览器输入 <strong>http://99.99.99.99:8080</strong>。热点状态与地址映射自动更新，无需手动添加规则。</p><p>该入口仅对连接 comma3 热点的客户端有效。iPhone 的 CarPlay 网络配置也需与热点一致；热点开启不代表有互联网，切换热点可能断开当前 Wi-Fi、SSH 和 CarPlay。</p></section>
-<section><h2>连接诊断</h2><button id="refresh" class="secondary" type="button">刷新诊断</button><p id="audio-ingress" role="status">检查手机音频接收情况…</p><p>遇到画面或声音问题时查看以下状态。认证材料只保存在设备本地，本页不提供密钥上传。</p><details><summary>查看接收器与浏览器详细状态</summary><pre id="diagnostics">读取中…</pre></details></section>
+<section><h2>连接与媒体诊断</h2><button id="refresh" class="secondary" type="button">刷新诊断</button><p id="video-ingress" role="status">检查 iPhone 视频接收情况…</p><p id="audio-ingress" role="status">检查手机音频接收情况…</p><p id="browser-media" role="status">正在检查本浏览器媒体能力…</p><p>推荐先用 <strong>H.264 · 1280 × 720 · 15 fps</strong>。若每隔数秒黑屏，先测试 10 fps；稳定后再测试 20 fps。30/60 fps 不是热点首选。此处“输入 FPS”是 comma 从 iPhone 收到的帧率，不等于浏览器实际显示帧率。</p><details><summary>查看接收器与浏览器详细状态</summary><pre id="diagnostics">读取中…</pre></details></section>
+<section><h2>上次主画面诊断（本标签页）</h2><p>从卡住的主画面点击「设置」进入这里。以下是该标签页最后一次采样，不是当前实时状态；触摸发送计数仅表示交给浏览器 WebSocket，不代表 iPhone 已执行。</p><pre id="viewer-diagnostics">尚无主画面采样。</pre><p>防锁屏依赖浏览器支持 Screen Wake Lock；普通 HTTP 热点地址通常不支持，不能保证保持亮屏。</p></section>
 <script type="module">
 const $ = id => document.getElementById(id);
 const url = new URL(location.href);
@@ -210,6 +211,10 @@ async function refresh() {
   controls();
 }
 async function diagnostics() {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem('commaplay-viewer-diagnostics') || 'null');
+    if (saved) $('viewer-diagnostics').textContent = JSON.stringify(saved, null, 2);
+  } catch {}
   const result = {origin:location.origin, secureContext:isSecureContext,
     h264Mse:typeof MediaSource !== 'undefined' && MediaSource.isTypeSupported('video/mp4; codecs="avc1.42E01E"'),
     aacMse:typeof MediaSource !== 'undefined' && MediaSource.isTypeSupported('audio/mp4; codecs="mp4a.40.2"'),
@@ -217,6 +222,12 @@ async function diagnostics() {
     webCodecs:typeof VideoDecoder !== 'undefined', microphone:!!navigator.mediaDevices?.getUserMedia};
   try {
     result.receiver = await (await fetch('/api/status')).json();
+    const video = result.receiver.video;
+    $('video-ingress').textContent = !video || !video.packetsReceived ?
+      '尚未收到 iPhone 视频。请确认手机已完成 CarPlay 会话。' :
+      video.lastPacketAgeMs < 3000 ?
+        `正在接收 iPhone 视频：约 ${video.inputFps5s.toFixed(1)} fps（5 秒窗口），最后一帧 ${video.lastPacketAgeMs} ms 前。${video.recommendation || ''}` :
+        `视频流已停：最后一帧 ${video.lastPacketAgeMs} ms 前。检查 Wi-Fi/热点与接收器日志。`;
     const audio = result.receiver.audio;
     $('audio-ingress').textContent = !audio || !audio.packetsReceived ?
       '尚未收到 iPhone 音频。请先播放音乐；若仍从手机发声，请在 iPhone 控制中心的播放输出中查看是否可选择 CommaPlay / CarPlay。浏览器自动播放授权不会改变手机输出目的地。' :
@@ -224,6 +235,10 @@ async function diagnostics() {
       '已接收过 iPhone 音频，当前没有新包；可能已暂停播放或手机切换了输出。';
     const response = await fetch('/api/readiness', {headers:{Authorization:'Bearer ' + token}});
     result.iphoneReadiness = await response.json();
+    $('browser-media').textContent =
+      `浏览器：${result.h264Mse ? '支持 H.264 MSE' : '不支持 H.264 MSE'} · ` +
+      `${result.aacMse ? '支持 AAC MSE' : '不支持 AAC MSE'} · ` +
+      `${result.webCodecs ? '有 WebCodecs' : 'HTTP 下使用 MSE'}。`;
   } catch (error) {result.error = error.message;}
   $('diagnostics').textContent = JSON.stringify(result, null, 2);
 }

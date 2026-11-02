@@ -26,6 +26,7 @@ const emptyKnob = (overrides: Partial<KnobState> = {}): KnobState => ({
 export class InputController {
   private readonly pointers = new Map<number, ActivePointer>();
   private pendingFlush = 0;
+  private inputMode: 'unknown' | 'pointer' | 'touch' = 'unknown';
 
   constructor(
     private readonly surface: HTMLElement,
@@ -40,11 +41,16 @@ export class InputController {
     surface.addEventListener('pointerup', this.onPointerUp, { passive: false });
     surface.addEventListener('pointercancel', this.onPointerUp, { passive: false });
     surface.addEventListener('lostpointercapture', this.onLostCapture);
+    surface.addEventListener('touchstart', this.onTouchStart, { passive: false });
+    surface.addEventListener('touchmove', this.onTouchMove, { passive: false });
+    surface.addEventListener('touchend', this.onTouchEnd, { passive: false });
+    surface.addEventListener('touchcancel', this.onTouchEnd, { passive: false });
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('blur', this.release);
     window.addEventListener('pagehide', this.release);
     window.addEventListener('pointerup', this.onPointerUp);
     window.addEventListener('pointercancel', this.onPointerUp);
+    window.addEventListener('pointermove', this.onPointerMove, { passive: false });
   }
 
   detach(): void {
@@ -54,11 +60,16 @@ export class InputController {
     surface.removeEventListener('pointerup', this.onPointerUp);
     surface.removeEventListener('pointercancel', this.onPointerUp);
     surface.removeEventListener('lostpointercapture', this.onLostCapture);
+    surface.removeEventListener('touchstart', this.onTouchStart);
+    surface.removeEventListener('touchmove', this.onTouchMove);
+    surface.removeEventListener('touchend', this.onTouchEnd);
+    surface.removeEventListener('touchcancel', this.onTouchEnd);
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('blur', this.release);
     window.removeEventListener('pagehide', this.release);
     window.removeEventListener('pointerup', this.onPointerUp);
     window.removeEventListener('pointercancel', this.onPointerUp);
+    window.removeEventListener('pointermove', this.onPointerMove);
     this.release();
   }
 
@@ -71,7 +82,11 @@ export class InputController {
     event.preventDefault();
     if (this.pointers.size >= MAX_CONTACTS) return;
     this.surface.focus({ preventScroll: true });
-    this.surface.setPointerCapture(event.pointerId);
+    try {
+      this.surface.setPointerCapture?.(event.pointerId);
+    } catch {
+      // Window listeners still track this gesture when the browser rejects capture.
+    }
     const x = this.normalizeX(event.clientX);
     const y = this.normalizeY(event.clientY);
     this.pointers.set(event.pointerId, {
@@ -112,6 +127,60 @@ export class InputController {
     // Some car browsers lose capture mid-swipe; release only when the button is no longer held.
     if (event.buttons === 0) this.onPointerUp(event);
   };
+
+  private readonly onTouchStart = (event: TouchEvent): void => {
+    if (typeof window.PointerEvent !== 'undefined' || this.surface.inert) return;
+    this.inputMode = 'touch';
+    event.preventDefault();
+    this.updateTouches(event.touches);
+    this.flushTouches();
+  };
+
+  private readonly onTouchMove = (event: TouchEvent): void => {
+    if (this.inputMode !== 'touch') return;
+    event.preventDefault();
+    this.updateTouches(event.touches);
+    this.scheduleFlush();
+  };
+
+  private readonly onTouchEnd = (event: TouchEvent): void => {
+    if (this.inputMode !== 'touch') return;
+    event.preventDefault();
+    for (const touch of Array.from(event.changedTouches)) {
+      const pointer = this.pointers.get(touch.identifier);
+      if (!pointer) continue;
+      pointer.x = this.normalizeX(touch.clientX);
+      pointer.y = this.normalizeY(touch.clientY);
+    }
+    if (Array.from(this.pointers.values()).some(pointer => pointer.x !== pointer.sentX || pointer.y !== pointer.sentY)) {
+      this.flushTouches();
+    }
+    for (const touch of Array.from(event.changedTouches)) {
+      const pointer = this.pointers.get(touch.identifier);
+      if (!pointer) continue;
+      pointer.down = false;
+    }
+    this.flushTouches();
+    for (const touch of Array.from(event.changedTouches)) this.pointers.delete(touch.identifier);
+    this.updateTouches(event.touches);
+  };
+
+  private updateTouches(touches: TouchList): void {
+    for (const touch of Array.from(touches)) {
+      let pointer = this.pointers.get(touch.identifier);
+      if (!pointer) {
+        if (this.pointers.size >= MAX_CONTACTS) continue;
+        const x = this.normalizeX(touch.clientX);
+        const y = this.normalizeY(touch.clientY);
+        pointer = { slot: this.nextSlot(), x, y, sentX: x, sentY: y, down: true };
+        this.pointers.set(touch.identifier, pointer);
+      } else {
+        pointer.x = this.normalizeX(touch.clientX);
+        pointer.y = this.normalizeY(touch.clientY);
+        pointer.down = true;
+      }
+    }
+  }
 
   private readonly release = (): void => {
     if (!this.pointers.size) return;
@@ -186,15 +255,15 @@ export class InputController {
 
   private scheduleFlush(): void {
     if (this.pendingFlush !== 0) return;
-    this.pendingFlush = window.requestAnimationFrame(() => {
+    this.pendingFlush = window.setTimeout(() => {
       this.pendingFlush = 0;
       this.flushTouches();
-    });
+    }, 16);
   }
 
   private flushTouches(): void {
     if (this.pendingFlush) {
-      window.cancelAnimationFrame(this.pendingFlush);
+      window.clearTimeout(this.pendingFlush);
       this.pendingFlush = 0;
     }
     const contacts: TouchContact[] = Array.from(this.pointers.values()).map((pointer) => ({

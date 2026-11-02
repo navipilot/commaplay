@@ -1,0 +1,23 @@
+# Copyright (c) 2026 机械小鸽; SPDX-License-Identifier: GPL-3.0-only
+[Unit]
+Description=CommaPlay active Wi-Fi and hotspot configuration monitor
+After=NetworkManager.service commaplay.service
+RequiresMountsFor=/data
+
+[Service]
+Type=simple
+User=root
+Group=comma
+WorkingDirectory=/data/commaplay
+ExecStart=/usr/bin/python3 /data/commaplay/native/network_sync.py
+RuntimeDirectory=commaplay-network
+RuntimeDirectoryMode=0750
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_READ_SEARCH
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/run/commaplay-network
+UMask=0027

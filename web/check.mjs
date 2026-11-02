@@ -18,10 +18,11 @@ class Element {
 globalThis.Element = Element;
 globalThis.document = { querySelector: () => modalOpen ? {} : null };
 globalThis.window = {
+  PointerEvent: class {},
   addEventListener: (name, handler) => listeners.set(name, handler),
   removeEventListener: (name) => listeners.delete(name),
-  requestAnimationFrame: (handler) => { frames.push(handler); return frames.length; },
-  cancelAnimationFrame: (id) => { if (frames[id - 1]) frames[id - 1] = () => {}; },
+  setTimeout: (handler) => { frames.push(handler); return frames.length; },
+  clearTimeout: (id) => { if (frames[id - 1]) frames[id - 1] = () => {}; },
 };
 const surface = Object.assign(new Element(), {
   inert: false, style: {}, focus() {}, setPointerCapture() {},
@@ -99,4 +100,40 @@ listeners.get('pointerdown')(pointer(9,160,120));
 listeners.get('lostpointercapture')({...pointer(9,160,120),buttons:0});
 assert.equal(messages.at(-1).contacts[0].down,false,'Capture loss after physical release must still clear contacts');
 controller.detach();
+
+controller.attach();
+messages.length = 0;
+surface.setPointerCapture = () => { throw new Error('Pointer capture unavailable'); };
+listeners.get('pointerdown')(pointer(10,160,120));
+listeners.get('pointermove')(pointer(10,200,180));
+flush();
+assert.equal(messages.length, 2, 'Capture failure and unavailable animation frames must not block a held swipe');
+listeners.get('pointerup')(pointer(10,200,180));
+assert.equal(messages.at(-1).contacts[0].down, false);
+surface.setPointerCapture = () => {};
+controller.detach();
+
+const touchController = new InputController(surface, (message) => messages.push(message));
+touchController.attach();
+messages.length = 0;
+rect = { left: 100, top: 50, width: 400, height: 225 };
+const touch = (id, x, y) => ({ identifier: id, clientX: x, clientY: y });
+const event = (touches, changedTouches = touches) => ({ touches, changedTouches, preventDefault() {} });
+listeners.get('touchstart')(event([touch(12, 300, 162.5)]));
+assert.equal(messages.length, 0, 'Browsers supporting Pointer Events must not duplicate contacts through Touch Events');
+delete window.PointerEvent;
+listeners.get('touchstart')(event([touch(12, 300, 162.5)]));
+assert.deepEqual(messages.pop().contacts, [{ id: 0, x: .5, y: .5, down: true }],
+  'Touch Events browsers must send a touch down without Pointer Events');
+listeners.get('touchend')(event([], [touch(12, 280, 200)]));
+assert.equal(messages.at(-2).contacts[0].down, true, 'Touch Events must send the final move before release');
+assert.deepEqual(messages.pop().contacts, [{ id: 0, x: .45, y: 2 / 3, down: false }],
+  'Touch Events release preserves its final coordinate');
+messages.length = 0;
+window.PointerEvent = class {};
+listeners.get('pointerdown')(pointer(13, 300, 162.5));
+listeners.get('pointerup')(pointer(13, 300, 162.5));
+assert.deepEqual(messages.map(message => message.contacts[0].down), [true, false],
+  'An earlier fallback gesture must never permanently disable the working Pointer Events path');
+touchController.detach();
 console.log('Viewer input check passed: keyboard isolation, native controls, portrait/landscape coordinates, multi-touch, and release.');

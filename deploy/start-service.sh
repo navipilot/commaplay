@@ -9,7 +9,12 @@ fi
 install -m 644 /data/commaplay/deploy/commaplay.service /run/systemd/system/commaplay.service
 install -m 644 /data/commaplay/deploy/commaplay-bluetooth-web.service /run/systemd/system/commaplay-bluetooth-web.service
 install -m 644 /data/commaplay/deploy/commaplay-hotspot.service /run/systemd/system/commaplay-hotspot.service
+install -m 644 /data/commaplay/deploy/commaplay-network.service /run/systemd/system/commaplay-network.service
 systemctl daemon-reload
+if ! systemctl is-active --quiet commaplay.service; then
+  python3 /data/commaplay/native/network_sync.py --prepare || echo "Active Wi-Fi detection unavailable; using saved configuration." >&2
+fi
 systemctl start --no-block commaplay-bluetooth-web.service
 systemctl start --no-block commaplay.service
 systemctl start --no-block commaplay-hotspot.service
+systemctl start --no-block commaplay-network.service

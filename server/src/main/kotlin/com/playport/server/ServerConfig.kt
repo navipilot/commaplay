@@ -15,7 +15,7 @@ data class ServerConfig(
     val httpPort: Int = 8080,
     val displayWidth: Int = 1280,
     val displayHeight: Int = 720,
-    val displayFps: Int = 30,
+    val displayFps: Int = 15,
     val uiScale: Int = com.shilapi.xcertplay.airplay.CarPlayUiScale.DEFAULT,
     val hevc: Boolean = false,
     val rightHandDrive: Boolean = false,

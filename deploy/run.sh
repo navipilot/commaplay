@@ -13,10 +13,14 @@ case "$MODE" in
     args+=(--diagnostics --width 1280 --height 720 --fps 30 --demo-video "$ROOT/testdata/demo.h264")
     ;;
   carplay)
-    args+=(--wireless --bt-bridge "$ROOT/native/linux-platform.py" --mdns jmdns --fps 30)
+    args+=(--wireless --bt-bridge "$ROOT/native/linux-platform.py" --mdns jmdns)
     if [[ -f "$ROOT/receiver.args" ]]; then
       mapfile -t receiver_args < "$ROOT/receiver.args"
       args+=("${receiver_args[@]}")
+    fi
+    if [[ -f /run/commaplay-network/receiver.args ]]; then
+      mapfile -t network_args < /run/commaplay-network/receiver.args
+      args+=("${network_args[@]}")
     fi
     ;;
   *) echo "Invalid mode: expected diagnostics or carplay" >&2; exit 1 ;;

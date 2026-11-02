@@ -33,6 +33,11 @@ class WirelessBootstrap(private val server: CarPlayServer) : Closeable {
     @Volatile private var stopped = false
     @Volatile var running = false
         private set
+    @Volatile private var acceptedAtNs = 0L
+
+    fun handoffTimedOut(): Boolean =
+        running && acceptedAtNs != 0L && !handoff.completed &&
+            System.nanoTime() - acceptedAtNs >= 90_000_000_000L
 
     fun start() {
         Thread(::run, "wireless-bootstrap").apply {
@@ -109,8 +114,15 @@ class WirelessBootstrap(private val server: CarPlayServer) : Closeable {
                 identification = identification,
                 endpoint = endpoint,
                 timeoutMillis = Iap2WirelessControlClient.NO_TIMEOUT_MILLIS,
-                onReady = { log.info("wireless bootstrap accepted by the iPhone; waiting for the Wi-Fi handoff") },
-                onProgress = { log.debug("wireless $it") },
+                onReady = {
+                    acceptedAtNs = System.nanoTime()
+                    log.info("wireless identification/authentication complete; waiting for CarPlay availability and Wi-Fi handoff")
+                },
+                onProgress = {
+                    if (it.startsWith("iap2 rx=") || it.startsWith("iap2 tx=0x4301") ||
+                        it.startsWith("iap2 tx=0x5703")) log.info("wireless {}", it)
+                    else log.debug("wireless {}", it)
+                },
             )
             if (!stopped) {
                 when (result.terminal) {

@@ -154,12 +154,44 @@ const connection = new Connection(token, {
   },
 });
 
-const input = new InputController(canvas, (message) => connection.send(message));
+let inputEvents = 0;
+let inputSent = 0;
+let lastInputAt = 0;
+let connectionState: ConnectionState = 'closed';
+let browserError = '';
+window.addEventListener('error', event => { browserError = event.message.slice(0, 200); });
+const input = new InputController(canvas, (message) => {
+  inputEvents += 1;
+  lastInputAt = Date.now();
+  if (connection.send(message)) inputSent += 1;
+});
 input.attach();
+
+type WakeLockSentinel = { release(): Promise<void>; addEventListener(type: 'release', listener: () => void): void };
+type WakeLockNavigator = Navigator & { wakeLock?: { request(type: 'screen'): Promise<WakeLockSentinel> } };
+let wakeLock: WakeLockSentinel | null = null;
+
+async function keepScreenAwake(): Promise<void> {
+  if (!sessionActive || document.visibilityState !== 'visible' || wakeLock) return;
+  try {
+    wakeLock = await (navigator as WakeLockNavigator).wakeLock?.request('screen') ?? null;
+    wakeLock?.addEventListener('release', () => { wakeLock = null; });
+  } catch {
+    // Older in-car browsers do not expose Screen Wake Lock.
+  }
+}
+
+void keepScreenAwake();
+document.addEventListener('visibilitychange', () => void keepScreenAwake());
 
 function resetSession(): void {
   input.reset();
   sessionActive = false;
+  if (wakeLock) {
+    const activeWakeLock = wakeLock;
+    wakeLock = null;
+    void activeWakeLock.release();
+  }
   app.dataset.session = 'idle';
   canvas.inert = true;
   for (const button of document.querySelectorAll<HTMLButtonElement>('[data-remote]')) button.disabled = true;
@@ -218,6 +250,7 @@ function applyServerState(message: ServerMessage): void {
           setOverlay(diagnosticMode ? '正在加载测试画面' : 'iPhone 已连接', diagnosticMode ? '合成测试视频，仅用于验证浏览器播放。' : '正在接收首帧，请稍候。画面出现后即可触控操作。', '准备画面');
         }
         sessionActive = true;
+        void keepScreenAwake();
         audio.startPlayback();
         canvas.inert = false;
         for (const button of document.querySelectorAll<HTMLButtonElement>('[data-remote]')) button.disabled = false;
@@ -230,6 +263,7 @@ function applyServerState(message: ServerMessage): void {
 }
 
 function applyConnectionState(state: ConnectionState): void {
+  connectionState = state;
   switch (state) {
     case 'connecting':
       setStatus('idle', 'Connecting…');
@@ -560,6 +594,9 @@ displayForm.addEventListener('submit', (event) => {
 // --- Stream statistics HUD ---
 
 let statsTick = performance.now();
+let previousMseVideo: HTMLVideoElement | null = null;
+let previousDecoded = 0;
+let previousDropped = 0;
 
 function updateStats(): void {
   const now = performance.now();
@@ -568,11 +605,38 @@ function updateStats(): void {
     '声音已启用 · 请在 CarPlay 中播放音乐';
   const elapsedSeconds = Math.max(0.001, (now - statsTick) / 1000);
   statsTick = now;
-  const fps = framesPainted / elapsedSeconds;
+  const mseVideo = surface.querySelector<HTMLVideoElement>('.mse-video');
+  const quality = mseVideo?.getVideoPlaybackQuality?.();
+  if (mseVideo !== previousMseVideo) {
+    previousDecoded = previousDropped = 0;
+    previousMseVideo = mseVideo;
+  }
+  const decoded = quality ? Math.max(0, quality.totalVideoFrames - previousDecoded) : framesPainted;
+  const dropped = quality ? Math.max(0, quality.droppedVideoFrames - previousDropped) : 0;
+  previousDecoded = quality?.totalVideoFrames ?? 0;
+  previousDropped = quality?.droppedVideoFrames ?? 0;
+  const fps = Math.max(0, decoded - dropped) / elapsedSeconds;
   const mbps = (bytesReceived * 8) / 1_000_000 / elapsedSeconds;
-  const dropped = Math.max(0, framesReceived - framesPainted);
   const queue = video.decodeQueueSize;
   const latency = latencySampleMs;
+  try {
+    sessionStorage.setItem('commaplay-viewer-diagnostics', JSON.stringify({
+      capturedAt: Date.now(), build: import.meta.url.split('/').pop()?.split('?')[0],
+      connection: connectionState, sessionActive, inputEvents, inputSent, lastInputAt,
+      inputInert: canvas.inert, browserError, fps, inputFps: framesReceived / elapsedSeconds,
+      lastVideoAgeMs: lastFrameArrival ? now - lastFrameArrival : null,
+      mse: mseVideo ? {
+        currentTime: mseVideo.currentTime, readyState: mseVideo.readyState, paused: mseVideo.paused,
+        buffered: Array.from({ length: mseVideo.buffered.length }, (_, i) =>
+          [mseVideo.buffered.start(i), mseVideo.buffered.end(i)]),
+        decodedFrames: quality?.totalVideoFrames, droppedFrames: quality?.droppedVideoFrames,
+        error: mseVideo.error?.message ?? null,
+      } : null,
+      wakeLock: wakeLock ? 'active' : ('wakeLock' in navigator ? 'not-held' : 'unsupported'),
+    }));
+  } catch {
+    // Playback must not depend on browser storage permission.
+  }
   framesPainted = 0;
   framesReceived = 0;
   bytesReceived = 0;

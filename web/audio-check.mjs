@@ -165,11 +165,21 @@ try {
   assert.deepEqual(await page.evaluate(()=>window.audioErrors||[]),[]);
   await page.evaluate(packet=>{
     engine.handleConfig({kind:'audio-config',streamType:102,codec:1,sampleRate:44100,channels:2,name:'media',description:new Uint8Array([0x12,0x10])});
-    for(let index=0;index<70;index++) engine.handlePacket({kind:'audio-packet',streamType:102,timestampUs:index*1024*1_000_000/44100,data:new Uint8Array(packet)});
-    engine.stopAll();
-  },packets[1]);
+    engine.startPlayback();
+    for(let index=0;index<2000;index++) engine.handlePacket({kind:'audio-packet',streamType:102,timestampUs:index*1024*1_000_000/44100,data:new Uint8Array(packet)});
+  },packets.reduce((largest, packet)=>packet.length>largest.length?packet:largest));
+  await page.waitForFunction(()=>energy()>.01, null, {timeout:10000}).catch(async error=>{
+    throw new Error(error.message+'; '+JSON.stringify(await page.evaluate(()=>({
+      errors:window.audioErrors, audio:Array.from(document.querySelectorAll('audio'),a=>({
+        error:a.error?.message,time:a.currentTime,paused:a.paused,
+        ranges:Array.from({length:a.buffered.length},(_,i)=>[a.buffered.start(i),a.buffered.end(i)]),
+      })),
+    }))));
+  });
+  assert.equal(await page.locator('audio').count(),1,'Burst delivery must preserve playback rather than permanently close audio');
+  assert.deepEqual(await page.evaluate(()=>window.audioErrors||[]),[]);
+  await page.evaluate(()=>engine.stopAll());
   assert.equal(await page.locator('audio').count(),0);
-  assert.ok((await page.evaluate(()=>window.audioErrors||[])).some(message=>message.includes('backlog exceeded')),'Startup backlog must close rather than grow indefinitely');
   assert.deepEqual(errors,[]);
   console.log('HTTP audio check passed: native AAC and Opus decoding with nonzero Web Audio output without AudioDecoder; simultaneous music/prompts, LPCM, volume/mute, bounded buffers and cleanup.');
   for (const automatic of [true,false]) {

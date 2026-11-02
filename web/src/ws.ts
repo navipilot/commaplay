@@ -70,10 +70,11 @@ export class Connection {
     this.retryDelayMs = Math.min(this.retryDelayMs * 2, 5000);
   }
 
-  send(message: ClientMessage): void {
+  send(message: ClientMessage): boolean {
     const socket = this.socket;
-    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return false;
     socket.send(JSON.stringify(message));
+    return true;
   }
 
   sendBinary(payload: Uint8Array): void {

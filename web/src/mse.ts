@@ -45,6 +45,12 @@ export class MsePlayer {
   private lastKeyRequest = -Infinity;
   private prunedUntil = 0;
   private cancelOpen: (() => void) | null = null;
+  private lastFrameAt = performance.now();
+  private lastPlaybackTime = 0;
+  private pendingSince = 0;
+  private lastInputAt = -Infinity;
+  private lastRecoveryRequestAt = -Infinity;
+  private keyframeTimes: number[] = [];
   ready = false;
 
   constructor(private readonly canvas: HTMLCanvasElement, private readonly onFrame: () => void,
@@ -54,7 +60,9 @@ export class MsePlayer {
     this.video.playsInline = true;
     this.video.className = 'mse-video';
     this.video.addEventListener('error', () => this.fail('MSE video playback failed'));
-    this.video.addEventListener('timeupdate', () => this.onFrame());
+    this.video.addEventListener('timeupdate', () => {
+      this.observePlayback();
+    });
     canvas.parentElement?.append(this.video);
   }
 
@@ -90,31 +98,58 @@ export class MsePlayer {
     this.pump();
     void this.video.play().catch(error => this.onError(`Browser playback blocked: ${String(error)}`));
     this.timer = window.setInterval(() => {
-      if (this.closed || !this.video.buffered.length) return;
-      const lag = this.video.buffered.end(this.video.buffered.length - 1) - this.video.currentTime;
-      this.video.playbackRate = lag > .2 ? 1.08 : 1;
-      if (lag > .45) {
-        const end = this.video.buffered.end(this.video.buffered.length - 1);
-        this.video.currentTime = Math.max(this.video.buffered.start(this.video.buffered.length - 1), end - .12);
+      // A static CarPlay screen may never send a next frame to delimit this sample.
+      if (this.previous && performance.now() - this.pendingSince >= 80) {
+        const previous = this.previous;
+        this.previous = null;
+        this.appendFrame(previous, 6000);
       }
+      this.observePlayback();
+      if (this.closed || !this.video.buffered.length) return;
+      const end = this.video.buffered.end(this.video.buffered.length - 1);
+      const ahead = end - this.video.currentTime;
+      if (!this.video.paused && !this.video.seeking &&
+          performance.now() - this.lastInputAt < 1500 &&
+          (ahead > 2 || (ahead > .15 && performance.now() - this.lastFrameAt > 3_000)) &&
+          performance.now() - this.lastRecoveryRequestAt > 5_000) {
+        // Recover only with actual queued pictures, not ordinary static-screen starvation.
+        this.lastRecoveryRequestAt = performance.now();
+        this.video.currentTime = Math.max(this.video.buffered.start(this.video.buffered.length - 1), end - .1);
+      }
+      this.video.playbackRate = 1;
       this.pump();
     }, 100);
     this.onError('');
   }
 
   push(message: VideoFrameMessage): void {
-    if (!this.ready || this.closed) return;
+    if (!this.ready || this.closed || message.data.length === 0) return;
     if (this.needsKey && !message.keyframe) {
       const now = performance.now();
       if (now - this.lastKeyRequest > 1000) { this.lastKeyRequest = now; this.requestKey(); }
       return;
     }
     this.needsKey = false;
+    this.lastInputAt = performance.now();
     const previous = this.previous;
     this.previous = message;
+    this.pendingSince = performance.now();
     if (!previous) return;
     const duration = Math.round(Math.max(1_000, Math.min(200_000, message.timestampUs - previous.timestampUs || 33_333)) * .09);
-    const bytes = fragment(++this.sequence, annexBToAvcc(previous.data), previous.keyframe, this.time, duration);
+    this.appendFrame(previous, duration);
+  }
+
+  private observePlayback(): void {
+    if (this.video.currentTime <= this.lastPlaybackTime) return;
+    this.lastPlaybackTime = this.video.currentTime;
+    this.lastFrameAt = performance.now();
+    this.onFrame();
+  }
+
+  private appendFrame(message: VideoFrameMessage, duration: number): void {
+    if (this.closed) return;
+    const bytes = fragment(++this.sequence, annexBToAvcc(message.data), message.keyframe, this.time, duration);
+    if (message.keyframe) this.keyframeTimes.push(this.time / 90000);
     this.time += duration;
     if (this.queue.length >= 32 || this.queuedBytes + bytes.length > 4 * 1024 * 1024) {
       this.fail('MSE client is too slow; refresh the video to restart at a keyframe');
@@ -127,9 +162,18 @@ export class MsePlayer {
 
   private pump(): void {
     if (!this.buffer || this.buffer.updating || this.closed) return;
-    const trim = this.video.currentTime - 3;
-    if (trim > 0 && trim > this.prunedUntil + 1) {
+    // Tesla Chromium can visibly blank when SourceBuffer.remove runs near the live decoder.
+    // Retain a longer whole-GOP history and prune only when it has genuinely accumulated.
+    const buffered = this.video.buffered;
+    const bufferedSeconds = buffered.length
+      ? buffered.end(buffered.length - 1) - buffered.start(0)
+      : 0;
+    const trim = bufferedSeconds > 16
+      ? this.keyframeTimes.filter(time => time <= this.video.currentTime - 12).at(-1) ?? 0
+      : 0;
+    if (trim > 0 && trim > this.prunedUntil + 4) {
       this.prunedUntil = trim;
+      this.keyframeTimes = this.keyframeTimes.filter(time => time >= trim);
       try { this.buffer.remove(0, trim); } catch (error) {
         this.fail(`MSE buffer cleanup failed: ${String(error)}`);
       }
@@ -145,7 +189,6 @@ export class MsePlayer {
     if (this.closed) return;
     this.close();
     this.onError(message);
-    this.requestKey();
   }
 
   close(): void {

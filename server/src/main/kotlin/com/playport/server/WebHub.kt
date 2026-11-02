@@ -151,6 +151,10 @@ class WebHub(
     private val inputCount = AtomicLong(0)
     private val audioPacketCount = AtomicLong(0)
     @Volatile private var lastAudioAtMs = 0L
+    private val videoPacketCount = AtomicLong(0)
+    private val videoWindowCount = AtomicLong(0)
+    @Volatile private var videoWindowStartMs = System.currentTimeMillis()
+    @Volatile private var lastVideoAtMs = 0L
     @Volatile var mainAudioOwner: String? = null
 
     fun recordDiagnosticInput(message: ClientMessage) {
@@ -193,6 +197,14 @@ class WebHub(
     }
 
     fun broadcastVideoFrame(type: Int, keyframe: Boolean, naluBytes: ByteArray) {
+        val now = System.currentTimeMillis()
+        if (now - videoWindowStartMs >= 5_000) {
+            videoWindowStartMs = now
+            videoWindowCount.set(0)
+        }
+        videoPacketCount.incrementAndGet()
+        videoWindowCount.incrementAndGet()
+        lastVideoAtMs = now
         val frame = Wire.videoFrame(type, keyframe, naluBytes)
         for (client in clients) {
             if (keyframe) {
@@ -515,6 +527,19 @@ class WebHub(
         put("diagnostics", kotlinx.serialization.json.JsonPrimitive(config.diagnostics))
         put("receiverReady", kotlinx.serialization.json.JsonPrimitive(receiverReady))
         put("browserAuth", kotlinx.serialization.json.JsonPrimitive(config.browserAuth))
+        put("video", kotlinx.serialization.json.buildJsonObject {
+            put("packetsReceived", kotlinx.serialization.json.JsonPrimitive(videoPacketCount.get()))
+            put("inputFps5s", kotlinx.serialization.json.JsonPrimitive(
+                videoWindowCount.get() * 1_000.0 / (System.currentTimeMillis() - videoWindowStartMs).coerceAtLeast(1),
+            ))
+            put("lastPacketAgeMs", if (lastVideoAtMs == 0L) kotlinx.serialization.json.JsonNull
+                else kotlinx.serialization.json.JsonPrimitive((System.currentTimeMillis() - lastVideoAtMs).coerceAtLeast(0)))
+            put("recommendation", kotlinx.serialization.json.JsonPrimitive(
+                if (display.hevc) "Switch to H.264 before testing HTTP/Tesla playback"
+                else if (display.fps > 20) "Start with 15 fps; use 10/20 fps only for comparison"
+                else "H.264 1280x720 at ${display.fps} fps is the current compatibility profile",
+            ))
+        })
         put("audio", kotlinx.serialization.json.buildJsonObject {
             put("resourceOwner", mainAudioOwner?.let { kotlinx.serialization.json.JsonPrimitive(it) }
                 ?: kotlinx.serialization.json.JsonNull)

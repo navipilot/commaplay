@@ -118,14 +118,13 @@ export class MseAudio {
     if (this.config.codec === AudioCodec.Opus) {
       try {
         const time = Math.max(this.nextTime, (message.timestampUs - this.origin) / 1000);
-        this.nextTime = time + opusDurationMs(message.data);
-        this.enqueue(opusFragment(time, message.data));
+        const duration = opusDurationMs(message.data);
+        if (this.enqueue(opusFragment(time, message.data))) this.nextTime = time + duration;
       } catch (error) { this.fail(`Opus packet rejected: ${String(error)}`); }
       return;
     }
     const time = Math.max(this.nextTime, Math.round((message.timestampUs - this.origin) * this.config.sampleRate / 1_000_000));
-    this.nextTime = time + 1024;
-    this.enqueue(audioFragment(++this.sequence, time, message.data));
+    if (this.enqueue(audioFragment(++this.sequence, time, message.data))) this.nextTime = time + 1024;
   }
 
   close(): void {
@@ -141,12 +140,20 @@ export class MseAudio {
     URL.revokeObjectURL(this.url);
   }
 
-  private enqueue(data: Uint8Array<ArrayBuffer>): void {
-    if (this.queue.length >= 64 || this.bytes + data.length > 512 * 1024) {
-      this.fail('Audio playback backlog exceeded; reconnect the viewer');
-      return;
+  private enqueue(data: Uint8Array<ArrayBuffer>): boolean {
+    if (data.length > 512 * 1024) {
+      this.fail('音频数据包过大');
+      return false;
+    }
+    if (this.bytes + data.length > 512 * 1024) {
+      // Keep the decodable prefix and header during a burst; resume as soon as appending catches up.
+      return false;
+    }
+    if (this.queue.length >= 64) {
+      this.queue = [join(...this.queue)];
     }
     this.queue.push(data); this.bytes += data.length; this.pump();
+    return true;
   }
 
   private pump(): void {
@@ -158,9 +165,12 @@ export class MseAudio {
       return;
     }
     if (!this.queue.length) return;
-    const data = this.queue.shift()!;
+    const batch = this.queue.splice(0, 16);
+    const data = batch.length === 1 ? batch[0] : join(...batch);
     this.bytes -= data.length;
-    try { this.buffer.appendBuffer(data); } catch { this.fail('音频缓冲写入失败'); }
+    try {
+      this.buffer.appendBuffer(data);
+    } catch { this.fail('音频缓冲写入失败'); }
   }
 
   private fail(message: string): void {

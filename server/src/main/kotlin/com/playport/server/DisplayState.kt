@@ -40,7 +40,7 @@ class DisplayState(width: Int, height: Int, fps: Int, uiScale: Int, hevc: Boolea
             width !in MIN_EDGE..MAX_EDGE || height !in MIN_EDGE..MAX_EDGE ->
                 "width and height must be between $MIN_EDGE and $MAX_EDGE"
             width % 2 != 0 || height % 2 != 0 -> "width and height must be even"
-            fps !in 24..60 -> "fps must be between 24 and 60"
+            fps !in 10..60 -> "fps must be between 10 and 60"
             else -> null
         }
 
